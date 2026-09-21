@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -27,20 +27,22 @@ public class EnemyManager : MonoBehaviour
             Debug.LogWarning("EnemySpawner nie został przypisany do EnemyManager.");
         }
 
-        // Jeśli tutorialCore jest potrzebny, upewnij się, że jest przypisany
-        if (tutorial && tutorialCore == null)
-        {
-            Debug.LogWarning("TutorialCore nie został przypisany do EnemyManager podczas trybu tutorialu.");
-        }
     }
 
     private void Start()
     {
         // Znajdź AudioManager, upewnij się, że nie jest null
-        audioManager = Object.FindAnyObjectByType<AudioManager>();
+        audioManager = AudioManager.AM != null ? AudioManager.AM : Object.FindAnyObjectByType<AudioManager>();
         if (audioManager == null)
         {
             Debug.LogError("Nie znaleziono AudioManager w scenie.");
+        }
+
+        // TutorialCore przypisuje tę referencję bezpośrednio po Instantiate().
+        // Sprawdzanie jej w Awake() dawało fałszywy warning, zanim caller zdążył ją ustawić.
+        if (tutorial && tutorialCore == null)
+        {
+            Debug.LogWarning("TutorialCore nie został przypisany do EnemyManager podczas trybu tutorialu.");
         }
     }
 
@@ -49,7 +51,7 @@ public class EnemyManager : MonoBehaviour
         // Zmniejsz licznik przeciwników, jeśli enemySpawner został przypisany
         if (!tutorial && enemySpawner != null)
         {
-            enemySpawner.numberOfSpawnedEnemies--;
+            enemySpawner.EnemyDestroyed();
         }
     }
 

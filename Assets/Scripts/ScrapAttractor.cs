@@ -1,42 +1,69 @@
-﻿using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(Rigidbody))]
+[RequireComponent(typeof(SphereCollider))]
 public class ScrapAttractor : MonoBehaviour
 {
     public float attractorSpeed = 10f;
+
     private SphereCollider sphereCollider;
-    private bool isAttracting = false;
+    private Rigidbody body;
+    private Transform playerTarget;
+    private float normalDamping;
 
     private void Awake()
     {
         sphereCollider = GetComponent<SphereCollider>();
+        body = GetComponent<Rigidbody>();
         sphereCollider.enabled = true;
-        Debug.Log("SphereCollider enabled");
+        sphereCollider.isTrigger = true;
+
     }
 
     private void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Player"))
         {
-            Debug.Log("Player detected");
-            isAttracting = true;
+            playerTarget = other.transform;
+            if (body != null)
+            {
+                normalDamping = body.linearDamping;
+                body.linearDamping = 0f;
+            }
         }
     }
 
-    private void OnTriggerStay(Collider other)
+    private void OnTriggerExit(Collider other)
     {
-        if (isAttracting && other.CompareTag("Player") && Vector3.Distance(transform.position, other.transform.position) > 0.1f)
+        if (playerTarget != null && other.transform == playerTarget)
         {
-            transform.position = Vector3.MoveTowards(transform.position, other.transform.position, attractorSpeed * Time.deltaTime);
+            playerTarget = null;
+            if (body != null)
+            {
+                body.linearDamping = normalDamping;
+            }
         }
     }
 
-    private void OnCollisionEnter(Collision collision)
+    private void FixedUpdate()
     {
-        if (collision.gameObject.tag != "Scrap")
+        if (playerTarget == null || body == null || body.isKinematic)
         {
-            // Możesz tu dodać logikę, która zadecyduje co zrobić w przypadku kolizji
+            return;
         }
+
+        Vector3 toPlayer = playerTarget.position - body.position;
+        float distance = toPlayer.magnitude;
+        if (distance <= 0.1f)
+        {
+            return;
+        }
+
+        Vector3 desiredVelocity = toPlayer / distance * attractorSpeed;
+        float acceleration = attractorSpeed * 6f;
+        body.linearVelocity = Vector3.MoveTowards(
+            body.linearVelocity,
+            desiredVelocity,
+            acceleration * Time.fixedDeltaTime);
     }
 }

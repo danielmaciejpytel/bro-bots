@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -70,12 +70,16 @@ public class LosePanel : MonoBehaviour
         }
         else
         {
+            animator.updateMode = AnimatorUpdateMode.UnscaledTime;
             text.SetText("Win");
+            Time.timeScale = 0f;
         }
     }
 
     public void LoadScene(int sceneIndex)
     {
+        Time.timeScale = 1;
+
         // Sprawdź, czy AudioManager istnieje przed odtwarzaniem dźwięku
         if (audioManager != null)
         {

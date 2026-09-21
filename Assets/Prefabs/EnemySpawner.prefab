@@ -47,7 +47,7 @@ MonoBehaviour:
   maxSpawnedEnemies: 3
   spawnRadius: 2
   enemiesPerSpawn: 1
-  player: {fileID: 3838800343841726964, guid: dab18afd7c9b32041a1e8801de295bcf, type: 3}
+  player: {fileID: 0}
   enemyPrefab: {fileID: 3179030129524509667, guid: 7562b921055c81c4ab5cecea714159bf,
     type: 3}
   scrapManager: {fileID: 0}

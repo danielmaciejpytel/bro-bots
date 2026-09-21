@@ -1,11 +1,8 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using Cichy.Utility;
-using System;
-using System.Numerics;
-using TMPro;
 using UnityEngine.UI;
+using UnityEngine.Serialization;
 using Quaternion = UnityEngine.Quaternion;
 using Vector3 = UnityEngine.Vector3;
 
@@ -18,26 +15,39 @@ public enum State
     Dash,
 }
 
+[RequireComponent(typeof(Rigidbody))]
+[RequireComponent(typeof(InputHandler))]
 public class PlayerController : MonoBehaviour
 {
+    [Header("Debug / Testing")]
+    [SerializeField]
+    [Tooltip("Player cannot die while enabled. Useful for testing scenes and hazards.")]
+    private bool godMode;
+
+    public bool IsGodMode => godMode;
+
     [Header("Movement")]
-    public float moveSpeed = 7f;
-    public float rotateSpeed;
-    public float activeDashSpeed = 150f;
-    public float dashAmount = 10f;
+    public float moveSpeed = 5f;
+    public float rotateSpeed = 5f;
+    [FormerlySerializedAs("activeRollSpeed")]
+    public float activeDashSpeed = 25f;
+    public float dashAmount = 5f;
     public Transform cameraTransform;
+    [SerializeField, HideInInspector, FormerlySerializedAs("cam")]
+    private Camera legacyMovementCamera;
 
     [Header("Dash Cooldown")]
-    public float dashCooldown = 2f;
+    public float dashCooldown = 3f;
     private float dashCooldownTimer = 0f;
     private bool canDash = true;
 
     [Header("Weapon States Stats")]
     [SerializeField] private GameObject handhead; // Umożliwia przypisanie w Inspektorze
-    public float firstWeaponAOERadius = 4f;
-    public float secondWeaponAOERadius = 4f;
-    public float thirdWeaponAOERadius = 4f;
-    public float fourthWeaponAOERadius = 4f;
+    [SerializeField] private RuntimeAnimatorController handheadController;
+    public float firstWeaponAOERadius = 3.75f;
+    public float secondWeaponAOERadius = 4.25f;
+    public float thirdWeaponAOERadius = 4.5f;
+    public float fourthWeaponAOERadius = 5f;
 
     public int secondWeaponStateScrap = 70;
     public int thirdWeaponStateScrap = 140;
@@ -61,9 +71,8 @@ public class PlayerController : MonoBehaviour
     private Rigidbody _rb;
     private Vector3 _moveDir;
     private Vector3 _dashDir;
-    private Vector3 _lastMoveDir;
     private float _dashSpeed;
-    private bool _isDashButtonDown;
+    private bool _attackInProgress;
     private State _state;
     private InputHandler _input;
 
@@ -72,6 +81,36 @@ public class PlayerController : MonoBehaviour
         _rb = GetComponent<Rigidbody>();
         _input = GetComponent<InputHandler>();
         characterAnim = GetComponent<Animator>();
+        if (characterAnim == null || characterAnim.runtimeAnimatorController == null)
+        {
+            Animator[] animators = GetComponentsInChildren<Animator>(true);
+            foreach (Animator animator in animators)
+            {
+                if (animator.runtimeAnimatorController != null)
+                {
+                    characterAnim = animator;
+                    break;
+                }
+            }
+        }
+
+        if (characterAnim != null)
+        {
+            characterAnim.applyRootMotion = false;
+        }
+
+        if (handhead == null)
+        {
+            var transforms = GetComponentsInChildren<Transform>(true);
+            foreach (var t in transforms)
+            {
+                if (t.name == "handhead")
+                {
+                    handhead = t.gameObject;
+                    break;
+                }
+            }
+        }
 
         // Zainicjalizuj animator broni
         if (handhead != null)
@@ -79,17 +118,130 @@ public class PlayerController : MonoBehaviour
             handheadAnim = handhead.GetComponent<Animator>();
             if (handheadAnim == null)
             {
-                Debug.LogError("Animator broni (handhead) nie został znaleziony!");
+                handheadAnim = handhead.GetComponentInChildren<Animator>(true);
+            }
+
+            if (handheadAnim != null &&
+                handheadAnim.runtimeAnimatorController == null &&
+                handheadController != null)
+            {
+                handheadAnim.runtimeAnimatorController = handheadController;
+            }
+
+            if (handheadAnim == null)
+            {
+                Debug.LogWarning("Animator broni (handhead) nie został znaleziony!");
             }
         }
         else
         {
-            Debug.LogError("Obiekt 'handhead' nie został przypisany w Inspektorze!");
+            Debug.LogWarning("Obiekt 'handhead' nie został przypisany w Inspektorze!");
+        }
+
+        ResolveCameraReference();
+
+        if (scrapManager == null)
+        {
+            scrapManager = UnityEngine.Object.FindFirstObjectByType<ScrapManager>();
         }
     }
 
-    void Update()
+    private void ResolveCameraReference()
     {
+        if (cameraTransform != null)
+        {
+            return;
+        }
+
+        if (legacyMovementCamera != null)
+        {
+            cameraTransform = legacyMovementCamera.transform;
+            return;
+        }
+
+        Camera mainCamera = Camera.main;
+        if (mainCamera != null)
+        {
+            cameraTransform = mainCamera.transform;
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (characterAnim != null)
+        {
+            characterAnim.SetBool("isRunning", false);
+        }
+    }
+
+    public void Die()
+    {
+        if (godMode)
+        {
+            return;
+        }
+
+        if (characterAnim != null)
+        {
+            characterAnim.SetBool("isRunning", false);
+            characterAnim.enabled = false;
+        }
+
+        if (handheadAnim != null)
+        {
+            handheadAnim.enabled = false;
+        }
+
+        if (_input != null)
+        {
+            _input.enabled = false;
+        }
+
+        if (_rb != null)
+        {
+            if (!_rb.isKinematic)
+            {
+                _rb.linearVelocity = Vector3.zero;
+                _rb.angularVelocity = Vector3.zero;
+            }
+
+            _rb.isKinematic = true;
+        }
+
+        var scrapExp = GetComponent<ScrapExplosion>();
+        if (scrapExp != null)
+        {
+            scrapExp.DropScrap(true);
+        }
+
+        // Hide renderers
+        Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+        foreach (var r in renderers)
+        {
+            r.enabled = false;
+        }
+
+        // Disable colliders
+        Collider[] colliders = GetComponentsInChildren<Collider>(true);
+        foreach (var c in colliders)
+        {
+            c.enabled = false;
+        }
+
+        // Disable UI canvases on player
+        Canvas[] canvases = GetComponentsInChildren<Canvas>(true);
+        foreach (var canvas in canvases)
+        {
+            canvas.gameObject.SetActive(false);
+        }
+
+        enabled = false;
+    }
+
+    private void Update()
+    {
+        UpdateDashCooldown();
+
         switch (_state)
         {
             case State.WeaponStage1:
@@ -98,15 +250,19 @@ public class PlayerController : MonoBehaviour
                 PlayerDash();
                 break;
             case State.WeaponStage2:
+                PlayerMovement();
+                AoeAttackCooldown();
                 PlayerDash();
-                AttackAoe();
                 break;
             case State.WeaponStage3:
+                PlayerMovement();
+                AoeAttackCooldown();
                 PlayerDash();
-                AttackAoe();
                 break;
             case State.WeaponStage4:
-                AttackAoe();
+                PlayerMovement();
+                AoeAttackCooldown();
+                PlayerDash();
                 break;
 
             case State.Dash:
@@ -136,7 +292,12 @@ public class PlayerController : MonoBehaviour
 
     private void AoeAttackCooldown()
     {
-        if (aoeCooldownCurrent >= aoeCooldown)
+        if (aoeCooldown <= 0f)
+        {
+            aoeCooldownCurrent = 0f;
+            aoeReady = true;
+        }
+        else if (aoeCooldownCurrent >= aoeCooldown)
         {
             aoeReady = true;
         }
@@ -147,66 +308,59 @@ public class PlayerController : MonoBehaviour
             aoeReady = false;
         }
 
-        aoeSlider.value = aoeCooldownCurrent / aoeCooldown;
-
-        if (aoeSlider.value >= 1.0f)
+        if (aoeSlider != null)
         {
-            aoeSlider.gameObject.SetActive(false);
-        }
-        else
-        {
-            aoeSlider.gameObject.SetActive(true);
+            aoeSlider.value = aoeCooldown <= 0f ? 1f : aoeCooldownCurrent / aoeCooldown;
+
+            if (aoeSlider.value >= 1.0f)
+            {
+                aoeSlider.gameObject.SetActive(false);
+            }
+            else
+            {
+                aoeSlider.gameObject.SetActive(true);
+            }
         }
 
-        if (Input.GetMouseButtonDown(0) && aoeReady)
+        if (_input != null && _input.AttackPressed && aoeReady)
         {
             AttackAoe();
-            characterAnim.SetTrigger("Attack_WeaponStage1"); // Animator postaci
-            handheadAnim.SetTrigger("Hand_Throw"); // Animator broni
+            if (CanPlayAnimation(characterAnim))
+            {
+                characterAnim.SetTrigger("Attack_WeaponStage1"); // Animator postaci
+            }
+            if (CanPlayAnimation(handheadAnim))
+            {
+                handheadAnim.SetTrigger("Hand_Throw"); // Animator broni
+            }
             aoeCooldownCurrent = 0.0f;
         }
     }
 
     private void PlayerMovement()
     {
-        Vector3 forward = cameraTransform.forward;
+        ResolveCameraReference();
+
+        Vector3 forward = cameraTransform != null ? cameraTransform.forward : Vector3.forward;
         forward.y = 0;
-        forward.Normalize();
+        if (forward.sqrMagnitude > 0.001f) forward.Normalize();
+        else forward = Vector3.forward;
 
-        Vector3 right = cameraTransform.right;
+        Vector3 right = cameraTransform != null ? cameraTransform.right : Vector3.right;
         right.y = 0;
-        right.Normalize();
+        if (right.sqrMagnitude > 0.001f) right.Normalize();
+        else right = Vector3.right;
 
-        Vector3 targetVector = (forward * _input.InputVector.y + right * _input.InputVector.x).normalized;
+        Vector2 inputVec = _input != null ? _input.InputVector : Vector2.zero;
+        Vector3 movementVector = Vector3.ClampMagnitude(
+            forward * inputVec.y + right * inputVec.x,
+            1f);
 
-        var movementVector = MoveTowardTarget(targetVector);
-        RotateTowardMovementVector(movementVector);
-        _moveDir = movementVector.normalized;
+        _moveDir = movementVector;
 
-        if (movementVector != Vector3.zero)
+        if (characterAnim != null)
         {
-            characterAnim.SetBool("isRunning", true);
-        }
-        else
-        {
-            characterAnim.SetBool("isRunning", false);
-        }
-    }
-
-    private Vector3 MoveTowardTarget(Vector3 targetVector)
-    {
-        var speed = moveSpeed * Time.deltaTime;
-        var targetPosition = transform.position + targetVector * speed;
-        transform.position = targetPosition;
-        return targetVector;
-    }
-
-    private void RotateTowardMovementVector(Vector3 movementVector)
-    {
-        if (movementVector != Vector3.zero)
-        {
-            var rotation = Quaternion.LookRotation(movementVector);
-            transform.rotation = Quaternion.RotateTowards(transform.rotation, rotation, rotateSpeed);
+            characterAnim.SetBool("isRunning", movementVector.sqrMagnitude > 0.001f);
         }
     }
 
@@ -214,60 +368,55 @@ public class PlayerController : MonoBehaviour
 
     public void AttackAoe()
     {
-        StartCoroutine(AttackSequenceAOE());
+        if (_attackInProgress)
+        {
+            return;
+        }
+
+        _attackInProgress = true;
+        StartCoroutine(AttackSequenceAOE(GetCurrentAttackRadius()));
     }
 
-    private IEnumerator AttackSequenceAOE()
+    private IEnumerator AttackSequenceAOE(float attackRadius)
     {
         yield return new WaitForSeconds(0.2f);
-        CheckForEnemiesAndDealAoeDamage();
+        CheckForEnemiesAndDealAoeDamage(attackRadius);
         yield return new WaitForSeconds(0.5f);
+        _attackInProgress = false;
     }
 
-    private void CheckForEnemiesAndDealAoeDamage()
+    private void CheckForEnemiesAndDealAoeDamage(float attackRadius)
     {
-        //case State.WeaponStage1:
-        Collider[] colliders = Physics.OverlapSphere(transform.position, firstWeaponAOERadius);
+        Collider[] colliders = Physics.OverlapSphere(
+            transform.position,
+            attackRadius,
+            Physics.AllLayers,
+            QueryTriggerInteraction.Ignore);
+        HashSet<EnemyMovement> pushedEnemies = new HashSet<EnemyMovement>();
+
         foreach (Collider c in colliders)
         {
-            if (c.GetComponent<EnemyMovement>())
+            EnemyMovement enemy = c.GetComponentInParent<EnemyMovement>();
+            if (enemy != null && pushedEnemies.Add(enemy))
             {
-                c.GetComponent<EnemyMovement>().Push();
+                enemy.Push();
             }
         }
-        /*
-                break;
+    }
+
+    private float GetCurrentAttackRadius()
+    {
+        switch (_state)
+        {
             case State.WeaponStage2:
-                Collider[] colliders2 = Physics.OverlapSphere(transform.position, secondWeaponAOERadius);
-                foreach (Collider c in colliders2)
-                {
-                    if (c.GetComponent<EnemyMovement>())
-                    {
-                        c.GetComponent<EnemyMovement>().Push();
-                    }
-                }
-                break;
+                return secondWeaponAOERadius;
             case State.WeaponStage3:
-                Collider[] colliders3 = Physics.OverlapSphere(transform.position, thirdWeaponAOERadius);
-                foreach (Collider c in colliders3)
-                {
-                    if (c.GetComponent<EnemyMovement>())
-                    {
-                        c.GetComponent<EnemyMovement>().Push();
-                    }
-                }
-                break;
+                return thirdWeaponAOERadius;
             case State.WeaponStage4:
-                Collider[] colliders4 = Physics.OverlapSphere(transform.position, fourthWeaponAOERadius);
-                foreach (Collider c in colliders4)
-                {
-                    if (c.GetComponent<EnemyMovement>())
-                    {
-                        c.GetComponent<EnemyMovement>().Push();
-                    }
-                }
-                break;
-         */
+                return fourthWeaponAOERadius;
+            default:
+                return firstWeaponAOERadius;
+        }
     }
 
     private void OnDrawGizmosSelected()
@@ -291,27 +440,34 @@ public class PlayerController : MonoBehaviour
         float dashSpeedDropMultiplier = 5f;
         _dashSpeed -= _dashSpeed * dashSpeedDropMultiplier * Time.deltaTime;
 
-        float dashSpeedMinimum = 50f;
+        float dashSpeedMinimum = Mathf.Max(1f, activeDashSpeed * 0.1f);
         if (_dashSpeed < dashSpeedMinimum)
         {
+            _dashSpeed = 0f;
             _state = State.WeaponStage1;
         }
     }
 
     private void PlayerDash()
     {
-        if (canDash && Input.GetKeyDown(KeyCode.Space))
+        if (canDash && _input != null && _input.DashPressed)
         {
-            _dashDir = _moveDir;
+            _dashDir = _moveDir.sqrMagnitude > 0.001f ? _moveDir.normalized : transform.forward;
             _dashSpeed = activeDashSpeed;
             _state = State.Dash;
 
-            characterAnim.SetTrigger("Dash");
+            if (CanPlayAnimation(characterAnim))
+            {
+                characterAnim.SetTrigger("Dash");
+            }
 
             canDash = false;
             dashCooldownTimer = dashCooldown;
         }
+    }
 
+    private void UpdateDashCooldown()
+    {
         if (!canDash)
         {
             dashCooldownTimer -= Time.deltaTime;
@@ -324,12 +480,33 @@ public class PlayerController : MonoBehaviour
 
     private void FixedUpdate()
     {
-        switch (_state)
+        if (_rb == null || _rb.isKinematic)
         {
-            case State.Dash:
-                _rb.linearVelocity = _dashDir * _dashSpeed;
-                break;
+            return;
         }
+
+        Vector3 planarVelocity = _state == State.Dash
+            ? _dashDir * _dashSpeed
+            : _moveDir * moveSpeed;
+
+        Vector3 velocity = _rb.linearVelocity;
+        _rb.linearVelocity = new Vector3(planarVelocity.x, velocity.y, planarVelocity.z);
+
+        Vector3 facingDirection = _state == State.Dash ? _dashDir : _moveDir;
+        if (facingDirection.sqrMagnitude > 0.001f)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(facingDirection);
+            float degrees = rotateSpeed * 60f * Time.fixedDeltaTime;
+            Quaternion nextRotation = Quaternion.RotateTowards(_rb.rotation, targetRotation, degrees);
+            _rb.MoveRotation(nextRotation);
+        }
+    }
+
+    private static bool CanPlayAnimation(Animator animator)
+    {
+        return animator != null &&
+               animator.isActiveAndEnabled &&
+               animator.runtimeAnimatorController != null;
     }
 
     #endregion

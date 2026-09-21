@@ -1,49 +1,53 @@
-﻿using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(Rigidbody))]
 public class Scrap : MonoBehaviour
 {
     public float moveSpeed = 3f;
     public float deceleration = 5f;
     [SerializeField] private int scrapValue = 1;
 
-    private Vector3 moveDirection;
     private ScrapManager scrapManager;
+    private Rigidbody body;
 
-    void Start()
+    private void Awake()
     {
-        SetRandomDirection();
-        scrapManager = Object.FindFirstObjectByType<ScrapManager>();
+        body = GetComponent<Rigidbody>();
     }
 
-    void Update()
+    private void Start()
     {
-        transform.position += moveDirection * Time.deltaTime;
+        scrapManager = ScrapManager.Instance != null
+            ? ScrapManager.Instance
+            : Object.FindFirstObjectByType<ScrapManager>();
 
-        // Zmiana kierunku w losowych odstępach czasu
-        if (moveDirection.magnitude > 0.1f)
+        if (body != null && !body.isKinematic)
         {
-            moveDirection = Vector3.Lerp(moveDirection, Vector3.zero, deceleration * Time.deltaTime);
-        }
-        else
-        {
-            SetRandomDirection();
-        }
-    }
+            body.interpolation = RigidbodyInterpolation.None;
+            body.collisionDetectionMode = CollisionDetectionMode.Discrete;
+            body.linearDamping = Mathf.Max(body.linearDamping, deceleration);
 
-    private void SetRandomDirection()
-    {
-        moveDirection.x = Random.Range(-moveSpeed, moveSpeed);
-        moveDirection.z = Random.Range(-moveSpeed, moveSpeed);
+            Vector2 horizontal = Random.insideUnitCircle;
+            Vector3 launchVelocity = new Vector3(
+                horizontal.x * moveSpeed,
+                Random.Range(moveSpeed * 0.35f, moveSpeed * 0.8f),
+                horizontal.y * moveSpeed);
+
+            body.linearVelocity += launchVelocity;
+            body.angularVelocity = Random.insideUnitSphere * moveSpeed;
+        }
     }
 
     private void OnCollisionEnter(Collision collision)
     {
         if (collision.gameObject.CompareTag("Player"))
         {
-            scrapManager.AddScraps(scrapValue);
-            Destroy(this.gameObject);
+            if (scrapManager != null && !scrapManager.IsPlayerDead)
+            {
+                scrapManager.AddScraps(scrapValue);
+            }
+
+            Destroy(gameObject);
         }
     }
 }

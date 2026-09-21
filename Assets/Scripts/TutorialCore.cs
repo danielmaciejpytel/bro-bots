@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
@@ -7,6 +7,8 @@ public enum TutorialState { Kamikaze, Play, Fail }
 
 public class TutorialCore : MonoBehaviour
 {
+    public event System.Action<TutorialState> StateChanged;
+
     public TutorialState tutorialState;
 
     [SerializeField] private TextMeshProUGUI popUp;
@@ -22,12 +24,26 @@ public class TutorialCore : MonoBehaviour
 
     void Awake()
     {
-        foreach (var item in spawners)
+        if (player == null)
         {
-            item.SetActive(false);
+            var p = GameObject.FindWithTag("Player") ?? GameObject.Find("NewPlayerBody");
+            if (p != null) player = p.transform;
         }
 
-        popupPanel.SetActive(false);
+        if (scrapManager == null)
+        {
+            scrapManager = Object.FindFirstObjectByType<ScrapManager>();
+        }
+
+        if (spawners != null)
+        {
+            foreach (var item in spawners)
+            {
+                if (item != null) item.SetActive(false);
+            }
+        }
+
+        if (popupPanel != null) popupPanel.SetActive(false);
         SetTutorialSate(TutorialState.Kamikaze);
     }
 
@@ -43,24 +59,31 @@ public class TutorialCore : MonoBehaviour
                 ShowPopUp(0);
                 break;
             case TutorialState.Play:
-                foreach (var item in spawners)
+                if (spawners != null)
                 {
-                    item.SetActive(true);
+                    foreach (var item in spawners)
+                    {
+                        if (item != null) item.SetActive(true);
+                    }
                 }
-                ShowPopUp(2);
+                ShowPopUp(texts != null && texts.Length > 2 ? 2 : 1);
                 break;
             case TutorialState.Fail:
                 SpawnEnemy();
-                ShowPopUp(3);
+                ShowPopUp(texts != null && texts.Length > 3 ? 3 : 0);
                 tutorialState = lastState;
                 break;
             default:
                 break;
         }
+
+        StateChanged?.Invoke(tutorialState);
     }
 
     private void SpawnEnemy()
     {
+        if (enemy == null) return;
+
         var newEnemy = Instantiate(enemy);
 
         Vector3 newPos = newEnemy.transform.position;
@@ -68,23 +91,37 @@ public class TutorialCore : MonoBehaviour
         newPos.z = transform.position.z;
         newEnemy.transform.position = newPos;
 
-        newEnemy.GetComponent<EnemyMovement>().scrapManager = scrapManager;
-        newEnemy.GetComponent<EnemyMovement>().player = player;
-        newEnemy.GetComponent<EnemyManager>().tutorialCore = this;
-        newEnemy.GetComponent<EnemyManager>().GFX[Random.Range(0, 3)].SetActive(true);
+        var movement = newEnemy.GetComponent<EnemyMovement>();
+        if (movement != null)
+        {
+            movement.scrapManager = scrapManager;
+            movement.player = player;
+        }
+
+        var manager = newEnemy.GetComponent<EnemyManager>();
+        if (manager != null)
+        {
+            manager.tutorialCore = this;
+            if (manager.GFX != null && manager.GFX.Length > 0)
+            {
+                manager.GFX[Random.Range(0, manager.GFX.Length)].SetActive(true);
+            }
+        }
     }
 
     private void ShowPopUp(int indexText)
     {
         Time.timeScale = 0;
-        popupPanel.SetActive(true);
-        popUp.SetText(texts[indexText]);
+        if (popupPanel != null) popupPanel.SetActive(true);
+        if (popUp != null && texts != null && indexText >= 0 && indexText < texts.Length)
+        {
+            popUp.SetText(texts[indexText]);
+        }
     }
 
     public void OK()
     {
-        Debug.Log("okkk");
         Time.timeScale = 1;
-        popupPanel.SetActive(false);
+        if (popupPanel != null) popupPanel.SetActive(false);
     }
 }

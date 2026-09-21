@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
@@ -6,6 +6,8 @@ using UnityEngine.UI;
 
 public class ScrapManager : MonoBehaviour
 {
+    public static ScrapManager Instance { get; private set; }
+
     [SerializeField] private TextMeshProUGUI scrapCounter;
     [Space(10)]
     [SerializeField] private Slider lvlUpSlider;
@@ -22,34 +24,82 @@ public class ScrapManager : MonoBehaviour
     private int actualAttackState = 0; // Poprawiona literówka
     private AudioManager audioManager;
     private bool isPlayerDead = false; // Flaga sprawdzająca, czy gracz już zginął
+    private PlayerController playerController;
+
+    public bool IsPlayerDead => isPlayerDead;
 
     private void Awake()
     {
+        Instance = this;
+
+        if (scrapExplosion == null)
+        {
+            playerController = Object.FindFirstObjectByType<PlayerController>();
+            if (playerController != null)
+            {
+                scrapExplosion = playerController.GetComponent<ScrapExplosion>();
+            }
+        }
+        else
+        {
+            playerController = Object.FindFirstObjectByType<PlayerController>();
+        }
+
         SetScrapValueText();
-        SetSlider(actualAttackState, 0);
+        if (HasLevelThreshold(actualAttackState))
+        {
+            SetSlider(actualAttackState, 0);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
     }
 
     private void Start()
     {
-        audioManager = Object.FindAnyObjectByType<AudioManager>();
+        audioManager = AudioManager.AM != null ? AudioManager.AM : Object.FindAnyObjectByType<AudioManager>();
     }
 
     private void Update()
     {
         SetScrapValueText();
-        lvlUpSlider.value = scrapNumber;
+        if (lvlUpSlider != null)
+        {
+            lvlUpSlider.value = scrapNumber;
+        }
     }
 
     private void SetScrapValueText()
     {
-        scrapCounter.SetText(points.ToString());
-        sliderValuesText.SetText($"{textInSlider} {lvlUpSlider.value}/{valuesToLvlUp[actualAttackState]}");
+        if (scrapCounter != null)
+        {
+            scrapCounter.SetText(points.ToString());
+        }
+
+        if (sliderValuesText != null && lvlUpSlider != null && HasLevelThreshold(actualAttackState))
+        {
+            sliderValuesText.SetText(
+                $"{textInSlider} {lvlUpSlider.value}/{valuesToLvlUp[actualAttackState]}");
+        }
     }
 
     private void SetSlider(int indexOfLvl, int scraps)
     {
         scrapNumber = scraps;
-        lvlUpSlider.maxValue = valuesToLvlUp[indexOfLvl];
+        if (lvlUpSlider != null && HasLevelThreshold(indexOfLvl))
+        {
+            lvlUpSlider.maxValue = valuesToLvlUp[indexOfLvl];
+        }
+    }
+
+    private bool HasLevelThreshold(int index)
+    {
+        return valuesToLvlUp != null && index >= 0 && index < valuesToLvlUp.Length;
     }
 
     private IEnumerator LoseCutdownCoroutine() // Poprawiona literówka
@@ -58,22 +108,44 @@ public class ScrapManager : MonoBehaviour
         {
             yield return new WaitForSeconds(0.4f);
             points--;
-            scrapExplosion.DropScrap(); // Zmienione na scrapExplosion
+            if (scrapExplosion != null)
+            {
+                scrapExplosion.DropScrap();
+            }
         }
         yield return new WaitForSeconds(0.2f);
-        losePanel.OpenPanel(false);
+        if (losePanel != null)
+        {
+            losePanel.OpenPanel(false);
+        }
     }
 
     public void EndGame(bool win)
     {
         if (win)
         {
-            losePanel.OpenPanel(true);
+            if (losePanel != null)
+            {
+                losePanel.OpenPanel(true);
+            }
         }
         else if (!isPlayerDead) // Sprawdź, czy gracz już zginął
         {
+            if (playerController == null)
+            {
+                playerController = Object.FindFirstObjectByType<PlayerController>();
+            }
+
+            if (playerController != null && playerController.IsGodMode)
+            {
+                return;
+            }
+
             isPlayerDead = true; // Ustaw flagę na true
-            Object.FindFirstObjectByType<PlayerController>().enabled = false;
+            if (playerController != null)
+            {
+                playerController.Die();
+            }
             StartCoroutine(LoseCutdownCoroutine());
         }
     }
@@ -81,6 +153,13 @@ public class ScrapManager : MonoBehaviour
     public void AddScraps(int value)
     {
         points += value;
+
+        if (!HasLevelThreshold(actualAttackState))
+        {
+            scrapNumber += value;
+            return;
+        }
+
         if (scrapNumber + value > valuesToLvlUp[actualAttackState])
         {
             if (actualAttackState + 1 >= valuesToLvlUp.Length) // Sprawdzenie, aby nie wykraczać poza tablicę
@@ -91,7 +170,10 @@ public class ScrapManager : MonoBehaviour
             {
                 actualAttackState++;
                 SetSlider(actualAttackState, scrapNumber + value - valuesToLvlUp[actualAttackState - 1]);
-                audioManager.Play("LevelUp");
+                if (audioManager != null)
+                {
+                    audioManager.Play("LevelUp");
+                }
             }
         }
         else
@@ -111,6 +193,12 @@ public class ScrapManager : MonoBehaviour
         {
             points -= value;
         }
+        if (!HasLevelThreshold(actualAttackState))
+        {
+            scrapNumber = Mathf.Max(0, scrapNumber - value);
+            return;
+        }
+
         if (scrapNumber - value < 0)
         {
             if (actualAttackState - 1 < 0)
@@ -121,7 +209,10 @@ public class ScrapManager : MonoBehaviour
             {
                 actualAttackState--;
                 SetSlider(actualAttackState, valuesToLvlUp[actualAttackState]);
-                audioManager.Play("LevelDown");
+                if (audioManager != null)
+                {
+                    audioManager.Play("LevelDown");
+                }
             }
         }
         else
