@@ -8,12 +8,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Menu.unity
     guid: c930f687bf4340142b74b5ffbae4736f
-  - enabled: 0
-    path: Assets/Scenes/Test_CichySceneLevel_01.unity
-    guid: ad06782a226e82c42ab270363622c772
   - enabled: 1
-    path: Assets/Scenes/Test_Playground.unity
-    guid: aeaf4651f60b3f84ea097bf339e565d0
+    path: Assets/Scenes/Level_01.unity
+    guid: 6c743b5358304c845b9e175bc3f7f6ec
   m_configObjects:
     com.unity.dt.app-ui: {fileID: 11400000, guid: 1b1c20d82303e4b5781c3ef50ac1449f,
       type: 2}
