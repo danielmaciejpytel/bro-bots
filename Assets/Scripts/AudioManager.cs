@@ -1,4 +1,4 @@
-﻿using UnityEngine.Audio;
+using UnityEngine.Audio;
 using System;
 using UnityEngine;
 
@@ -12,20 +12,30 @@ public class AudioManager : MonoBehaviour
     void Awake()
     {
         if (AM == null)
+        {
             AM = this;
-        else
+            DontDestroyOnLoad(gameObject);
+            InitializeSounds();
+        }
+        else if (AM != this)
         {
             Destroy(gameObject);
             return;
         }
+    }
 
-        DontDestroyOnLoad(gameObject);
+    private void InitializeSounds()
+    {
+        if (sounds == null) return;
 
         foreach (var s in sounds)
         {
-            s.source = gameObject.AddComponent<AudioSource>();
+            if (s == null) continue;
+            if (s.source == null)
+            {
+                s.source = gameObject.AddComponent<AudioSource>();
+            }
             s.source.clip = s.clip;
-
             s.source.volume = s.valume;
             s.source.pitch = s.pitch;
             s.source.outputAudioMixerGroup = s.mixerGroup;
@@ -35,22 +45,57 @@ public class AudioManager : MonoBehaviour
 
     public void Play(string name)
     {
-        Sound s = Array.Find(sounds, sound => sound.name == name);
-        if (s == null)
+        if (AM != null && AM != this)
         {
-            Debug.Log("Nie ma takiego dźwięku jak: " + name);
+            AM.Play(name);
             return;
         }
-        s.source.Play();
+
+        if (sounds == null) return;
+
+        Sound s = Array.Find(sounds, sound => sound != null && sound.name == name);
+        if (s == null)
+        {
+            Debug.LogWarning("Nie ma takiego dźwięku jak: " + name);
+            return;
+        }
+
+        if (s.source == null)
+        {
+            s.source = gameObject.AddComponent<AudioSource>();
+            s.source.clip = s.clip;
+            s.source.volume = s.valume;
+            s.source.pitch = s.pitch;
+            s.source.outputAudioMixerGroup = s.mixerGroup;
+            s.source.loop = s.loop;
+        }
+
+        if (s.source != null && s.clip != null)
+        {
+            s.source.Play();
+        }
     }
+
     public void Stop(string name)
     {
-        Sound s = Array.Find(sounds, sound => sound.name == name);
-        if (s == null)
+        if (AM != null && AM != this)
         {
-            Debug.Log("Nie ma takiego dźwięku jak: " + name);
+            AM.Stop(name);
             return;
         }
-        s.source.Stop();
+
+        if (sounds == null) return;
+
+        Sound s = Array.Find(sounds, sound => sound != null && sound.name == name);
+        if (s == null)
+        {
+            Debug.LogWarning("Nie ma takiego dźwięku jak: " + name);
+            return;
+        }
+
+        if (s.source != null)
+        {
+            s.source.Stop();
+        }
     }
 }

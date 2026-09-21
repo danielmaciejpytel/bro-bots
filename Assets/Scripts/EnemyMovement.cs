@@ -1,10 +1,11 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(EnemyManager))]
+[RequireComponent(typeof(Rigidbody))]
 public class EnemyMovement : MonoBehaviour
 {
     [SerializeField] private float timeToLocatePlayer = 2;
@@ -26,14 +27,15 @@ public class EnemyMovement : MonoBehaviour
     private bool atack;
     private bool atackIsActive;
     private AudioManager audioManager;
+    private Rigidbody body;
 
     private void Start()
     {
         // Znajdź AudioManager i EnemyManager, upewnij się, że nie są null
-        audioManager = Object.FindAnyObjectByType<AudioManager>();
+        audioManager = AudioManager.AM != null ? AudioManager.AM : Object.FindAnyObjectByType<AudioManager>();
         if (audioManager == null)
         {
-            Debug.LogError("Nie znaleziono AudioManager w scenie.");
+            Debug.LogWarning("Nie znaleziono AudioManager w scenie.");
         }
 
         enemyManager = GetComponent<EnemyManager>();
@@ -47,6 +49,21 @@ public class EnemyMovement : MonoBehaviour
         if (meshAgent == null)
         {
             Debug.LogError("Brak komponentu NavMeshAgent na obiekcie: " + gameObject.name);
+        }
+
+        body = GetComponent<Rigidbody>();
+
+        if (meshAgent != null && meshAgent.enabled && !meshAgent.isOnNavMesh &&
+            NavMesh.SamplePosition(transform.position, out NavMeshHit startHit, 3f, meshAgent.areaMask))
+        {
+            transform.position = startHit.position;
+            meshAgent.Warp(startHit.position);
+        }
+
+        if (!IsSceneObject(player))
+        {
+            var p = GameObject.FindWithTag("Player") ?? GameObject.Find("NewPlayerBody");
+            if (p != null) player = p.transform;
         }
 
         // Sprawdź, czy player został przypisany
@@ -63,6 +80,11 @@ public class EnemyMovement : MonoBehaviour
             }
         }
 
+        if (scrapManager == null)
+        {
+            scrapManager = Object.FindFirstObjectByType<ScrapManager>();
+        }
+
         // Sprawdź ScrapManager
         if (scrapManager == null)
         {
@@ -76,50 +98,74 @@ public class EnemyMovement : MonoBehaviour
         StartCoroutine(FindPlayerCoroutine());
     }
 
-    void Update()
+    private static bool IsSceneObject(Transform target)
     {
-        // Sprawdź odległość do gracza
-        if (player != null)
+        return target != null &&
+               target.gameObject.scene.IsValid() &&
+               target.gameObject.scene.isLoaded;
+    }
+
+    private void Update()
+    {
+        if (player == null || hit)
         {
-            float distance = Vector3.Distance(transform.position, player.position);
+            return;
+        }
 
-            if (distance > atackDistance && meshAgent.enabled)
-            {
-                meshAgent.SetDestination(currentPath);
-                atack = false;
-                atackIsActive = false;
-            }
-            else if (distance <= atackDistance && meshAgent.enabled)
-            {
-                atack = true;
-                if (!atackIsActive)
-                {
-                    atackIsActive = true;
-                    StartCoroutine(AtackPlayerCourutine());
-                }
-            }
+        float distance = Vector3.Distance(transform.position, player.position);
+        bool canUseAgent = meshAgent != null && meshAgent.enabled && meshAgent.isOnNavMesh;
 
-            if (hit)
+        if (distance > atackDistance && canUseAgent)
+        {
+            meshAgent.SetDestination(currentPath);
+            atack = false;
+            atackIsActive = false;
+        }
+        else if (distance <= atackDistance && canUseAgent)
+        {
+            atack = true;
+            if (!atackIsActive)
             {
-                float step = pushSpeed * Time.deltaTime;
-                transform.position = Vector3.MoveTowards(transform.position, targetPos, step);
-
-                if (Vector3.Distance(transform.position, targetPos) < 0.1)
-                {
-                    hit = false;
-                    meshAgent.enabled = true;
-                }
+                atackIsActive = true;
+                StartCoroutine(AtackPlayerCourutine());
             }
+        }
+    }
+
+    private void FixedUpdate()
+    {
+        if (!hit)
+        {
+            return;
+        }
+
+        Vector3 currentPosition = body != null ? body.position : transform.position;
+        Vector3 nextPosition = Vector3.MoveTowards(
+            currentPosition,
+            targetPos,
+            pushSpeed * Time.fixedDeltaTime);
+
+        if (body != null)
+        {
+            body.MovePosition(nextPosition);
+        }
+        else
+        {
+            transform.position = nextPosition;
+        }
+
+        if ((nextPosition - targetPos).sqrMagnitude <= 0.01f)
+        {
+            FinishPush();
         }
     }
 
     private void OnCollisionEnter(Collision collision)
     {
         // Użyj CompareTag, aby porównać tagi
-        if (collision.gameObject.CompareTag("Wall"))
+        if (hit && collision.gameObject.CompareTag("Wall"))
         {
-            hit = false;
-            meshAgent.enabled = true;
+            FinishPush();
         }
     }
 
@@ -146,17 +192,69 @@ public class EnemyMovement : MonoBehaviour
 
     public void Push()
     {
-        if (player != null)
+        if (player == null || meshAgent == null)
         {
-            meshAgent.enabled = false;
-            transform.LookAt(player);
-            targetPos = transform.position - transform.forward * pushPower;
-            hit = true;
+            return;
+        }
 
-            if (audioManager != null)
+        Vector3 pushDirection = transform.position - player.position;
+        pushDirection.y = 0f;
+        if (pushDirection.sqrMagnitude <= 0.001f)
+        {
+            pushDirection = -transform.forward;
+        }
+
+        atack = false;
+        atackIsActive = false;
+
+        if (meshAgent.enabled)
+        {
+            if (meshAgent.isOnNavMesh)
             {
-                audioManager.Play("EnemiesPush");
+                meshAgent.isStopped = true;
+                meshAgent.ResetPath();
             }
+
+            meshAgent.enabled = false;
+        }
+
+        targetPos = transform.position + pushDirection.normalized * pushPower;
+        hit = true;
+
+        if (audioManager != null)
+        {
+            audioManager.Play("EnemiesPush");
+        }
+    }
+
+    private void FinishPush()
+    {
+        hit = false;
+
+        if (meshAgent == null)
+        {
+            return;
+        }
+
+        float sampleDistance = Mathf.Max(2f, pushPower);
+        if (NavMesh.SamplePosition(transform.position, out NavMeshHit navHit, sampleDistance, meshAgent.areaMask))
+        {
+            if (body != null)
+            {
+                body.position = navHit.position;
+            }
+            else
+            {
+                transform.position = navHit.position;
+            }
+
+            meshAgent.enabled = true;
+            meshAgent.Warp(navHit.position);
+            meshAgent.isStopped = false;
+        }
+        else
+        {
+            Debug.LogWarning($"Nie znaleziono NavMesh po odepchnięciu przeciwnika '{name}'.", this);
         }
     }
 

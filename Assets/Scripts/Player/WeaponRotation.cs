@@ -1,22 +1,20 @@
-﻿using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class WeaponRotation : MonoBehaviour
 {
-
-    //ale ta klasa jest chujowa xDDDD
     public float rotationAnglePerSecond = 15f;
-
     public bool startRotating = false;
-
     public bool resetRotation = true;
 
-    void Update()
+    private void Update()
     {
-        if (startRotating) transform.Rotate(0f, rotationAnglePerSecond, 0f * Time.deltaTime);
-        if (!startRotating) transform.rotation = transform.rotation;
+        if (!startRotating)
+        {
+            return;
+        }
+
+        // Existing prefab values were tuned per frame around 60 FPS.
+        // Multiplying by 60 preserves that feel while making rotation frame-rate independent.
+        transform.Rotate(0f, rotationAnglePerSecond * 60f * Time.deltaTime, 0f);
     }
 }
-
-

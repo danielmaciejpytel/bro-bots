@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -33,12 +33,18 @@ public class ObstacleManager : MonoBehaviour
     private Vector3 targetPos;
     private bool hit;
     private Transform player;
+    private Rigidbody playerBody;
     private int laserTimer;
     private bool laserHit;
     private bool laserOn;
 
     private void Awake()
     {
+        if (scrapManager == null)
+        {
+            scrapManager = Object.FindFirstObjectByType<ScrapManager>();
+        }
+
         if (obstacleType == ObstacleType.Lasers)
         {
             lineRenderer.SetPosition(0, Vector3.zero);
@@ -66,17 +72,6 @@ public class ObstacleManager : MonoBehaviour
                     break;
             }
 
-            if (hit)
-            {
-                float step = cogsSpeed * Time.deltaTime;
-                player.position = Vector3.MoveTowards(player.position, targetPos, step);
-
-                if (Vector3.Distance(player.position, targetPos) < 0.1f)
-                {
-                    player.GetComponent<PlayerController>().enabled = true;
-                    hit = false;
-                }
-            }
         }
         else if (obstacleType == ObstacleType.Lasers && laserOn)
         {
@@ -111,16 +106,62 @@ public class ObstacleManager : MonoBehaviour
         }
     }
 
+    private void FixedUpdate()
+    {
+        if (!hit || playerBody == null)
+        {
+            return;
+        }
+
+        if (playerBody.isKinematic)
+        {
+            FinishSawPush();
+            return;
+        }
+
+        Vector3 nextPosition = Vector3.MoveTowards(
+            playerBody.position,
+            targetPos,
+            cogsSpeed * Time.fixedDeltaTime);
+
+        playerBody.MovePosition(nextPosition);
+
+        if ((nextPosition - targetPos).sqrMagnitude <= 0.01f)
+        {
+            FinishSawPush();
+        }
+    }
+
     private void OnCollisionEnter(Collision collision)
     {
-        if (collision.gameObject.tag == "Player" && obstacleType == ObstacleType.Saw)
+        if (collision.gameObject.CompareTag("Player") && obstacleType == ObstacleType.Saw)
         {
+            if (hit)
+            {
+                return;
+            }
+
             if (player == null)
             {
-                player = collision.gameObject.GetComponent<Transform>();
+                player = collision.transform;
             }
-            player.GetComponent<ScrapExplosion>().DropScrap();
-            scrapManager.SubtractScraps(sawPower);
+
+            ScrapExplosion playerScrap = player.GetComponent<ScrapExplosion>();
+            if (playerScrap != null)
+            {
+                playerScrap.DropScrap();
+            }
+
+            if (scrapManager != null)
+            {
+                scrapManager.SubtractScraps(sawPower);
+                if (scrapManager.IsPlayerDead)
+                {
+                    FinishSawPush();
+                    return;
+                }
+            }
+
             Saw(player.GetComponent<Rigidbody>(), player);
         }
         else if (collision.gameObject.tag == "Scrap" && obstacleType == ObstacleType.Oil)
@@ -150,13 +191,47 @@ public class ObstacleManager : MonoBehaviour
 
     private void Saw(Rigidbody targetRB, Transform targetTransorm)
     {
-        player.GetComponent<PlayerController>().enabled = false;
+        if (targetRB == null || targetRB.isKinematic)
+        {
+            return;
+        }
+
+        playerBody = targetRB;
+
+        PlayerController playerController = player.GetComponent<PlayerController>();
+        if (playerController != null)
+        {
+            playerController.enabled = false;
+        }
+
+        Vector3 velocity = playerBody.linearVelocity;
+        playerBody.linearVelocity = new Vector3(0f, velocity.y, 0f);
 
         Vector3 pos = saw.forward * cogsPower;
         pos.y = 0;
 
         targetPos = targetTransorm.position + pos;
         hit = true;
+    }
+
+    private void FinishSawPush()
+    {
+        hit = false;
+        playerBody = null;
+
+        if (player == null)
+        {
+            return;
+        }
+
+        if (scrapManager == null || !scrapManager.IsPlayerDead)
+        {
+            PlayerController playerController = player.GetComponent<PlayerController>();
+            if (playerController != null)
+            {
+                playerController.enabled = true;
+            }
+        }
     }
 
     private IEnumerator LaserCourutine()

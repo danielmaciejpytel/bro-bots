@@ -12,7 +12,6 @@ GameObject:
   - component: {fileID: -3169568952733483196}
   - component: {fileID: 2711837347445825359}
   - component: {fileID: 2126446348035103236}
-  - component: {fileID: 329362943352176472}
   - component: {fileID: 2711837347445825355}
   - component: {fileID: 2711837347445825356}
   - component: {fileID: 3455911077107966092}
@@ -62,14 +61,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3977f72179418984da92b22b3f949c11, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveSpeed: 7
-  rotateSpeed: 15
-  activeRollSpeed: 150
-  dashAmount: 10
-  firstWeaponAOERadius: 4
-  secondWeaponAOERadius: 4
-  thirdWeaponAOERadius: 4
-  fourthWeaponAOERadius: 4
+  moveSpeed: 5
+  rotateSpeed: 5
+  activeDashSpeed: 25
+  dashAmount: 5
+  dashCooldown: 3
+  firstWeaponAOERadius: 3.75
+  secondWeaponAOERadius: 4.25
+  thirdWeaponAOERadius: 4.5
+  fourthWeaponAOERadius: 5
   secondWeaponStateScrap: 70
   thirdWeaponStateScrap: 140
   fourthWeaponStateScrap: 210
@@ -101,14 +101,6 @@ Animator:
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorControllerStateOnDisable: 0
---- !u!81 &329362943352176472
-AudioListener:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2711837347445825354}
-  m_Enabled: 1
 --- !u!136 &2711837347445825355
 CapsuleCollider:
   m_ObjectHideFlags: 0
