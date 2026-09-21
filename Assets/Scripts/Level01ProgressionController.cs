@@ -17,9 +17,11 @@ public enum Level01Stage
 public sealed class Level01ProgressionController : MonoBehaviour
 {
     private const string LevelName = "Level_01";
+    private const float RoomActivationDistance = 16f;
 
     private TutorialCore tutorial;
     private BodyParts bodyParts;
+    private Transform player;
 
     private RoomState tutorialRoom;
     private RoomState room2;
@@ -27,6 +29,7 @@ public sealed class Level01ProgressionController : MonoBehaviour
     private RoomState room4;
     private RoomState laserRoom;
     private RoomState currentCombatRoom;
+    private bool currentWaveStarted;
 
     private readonly List<EnemySpawner> subscribedSpawners = new List<EnemySpawner>();
 
@@ -42,6 +45,7 @@ public sealed class Level01ProgressionController : MonoBehaviour
 
         tutorial = FindFirstObjectByType<TutorialCore>();
         bodyParts = FindFirstObjectByType<BodyParts>();
+        player = FindPlayerTransform();
 
         tutorialRoom = BuildRoom("RoomTutorial");
         room2 = BuildRoom("Room2");
@@ -51,6 +55,11 @@ public sealed class Level01ProgressionController : MonoBehaviour
 
         ConfigureGates();
         PrepareInitialState();
+    }
+
+    private void Update()
+    {
+        TryStartCurrentWave();
     }
 
     private void OnDestroy()
@@ -143,8 +152,10 @@ public sealed class Level01ProgressionController : MonoBehaviour
         UnsubscribeCurrentWave();
         Stage = Level01Stage.Final;
         currentCombatRoom = null;
+        currentWaveStarted = false;
 
         OpenGate(laserRoom?.EntryWall);
+        OpenGate(laserRoom?.ExitWall);
 
         if (bodyParts != null)
         {
@@ -168,6 +179,7 @@ public sealed class Level01ProgressionController : MonoBehaviour
 
         Stage = stage;
         currentCombatRoom = room;
+        currentWaveStarted = false;
 
         if (room == null || room.Spawners.Length == 0)
         {
@@ -187,16 +199,20 @@ public sealed class Level01ProgressionController : MonoBehaviour
             spawner.ConfigureFiniteWave(waveSize);
             spawner.WaveCleared += HandleSpawnerWaveCleared;
             subscribedSpawners.Add(spawner);
-            spawner.enabled = true;
-            spawner.gameObject.SetActive(true);
+            spawner.enabled = false;
+            if (!spawner.gameObject.activeSelf)
+            {
+                spawner.gameObject.SetActive(true);
+            }
         }
 
-        Debug.Log($"[Level01] {stage} started. Spawners: {room.Spawners.Length}.");
+        Debug.Log($"[Level01] {stage} armed. Waiting for player entry.");
+        TryStartCurrentWave();
     }
 
     private void HandleSpawnerWaveCleared(EnemySpawner _)
     {
-        if (currentCombatRoom == null)
+        if (currentCombatRoom == null || !currentWaveStarted)
         {
             return;
         }
@@ -215,6 +231,69 @@ public sealed class Level01ProgressionController : MonoBehaviour
 
         Debug.Log($"[Level01] {Stage} cleared.");
         AdvanceAfterCurrentRoom();
+    }
+
+    private void TryStartCurrentWave()
+    {
+        if (currentCombatRoom == null || currentWaveStarted)
+        {
+            return;
+        }
+
+        if (!IsSceneObject(player))
+        {
+            player = FindPlayerTransform();
+        }
+
+        if (player == null || !IsPlayerNearRoom(currentCombatRoom, player.position))
+        {
+            return;
+        }
+
+        currentWaveStarted = true;
+        foreach (EnemySpawner spawner in currentCombatRoom.Spawners)
+        {
+            if (spawner != null)
+            {
+                spawner.enabled = true;
+            }
+        }
+
+        Debug.Log($"[Level01] {Stage} started. Spawners: {currentCombatRoom.Spawners.Length}.");
+    }
+
+    private static bool IsPlayerNearRoom(RoomState room, Vector3 playerPosition)
+    {
+        float maxDistanceSqr = RoomActivationDistance * RoomActivationDistance;
+        foreach (EnemySpawner spawner in room.Spawners)
+        {
+            if (spawner == null)
+            {
+                continue;
+            }
+
+            Vector3 delta = spawner.transform.position - playerPosition;
+            delta.y = 0f;
+            if (delta.sqrMagnitude <= maxDistanceSqr)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Transform FindPlayerTransform()
+    {
+        GameObject playerObject = GameObject.FindWithTag("Player") ?? GameObject.Find("NewPlayerBody");
+        return playerObject != null ? playerObject.transform : null;
+    }
+
+    private static bool IsSceneObject(Transform target)
+    {
+        return target != null &&
+               target.gameObject.scene.IsValid() &&
+               target.gameObject.scene.isLoaded;
     }
 
     private void AdvanceAfterCurrentRoom()
@@ -320,8 +399,8 @@ public sealed class Level01ProgressionController : MonoBehaviour
             room.ExitWall = room.Walls.FirstOrDefault(wall => wall != room.EntryWall) ?? room.Walls[0];
         }
 
-        // Final room has no next room. Keep the wall opposite its entrance closed
-        // so the player remains inside the finale while collecting the three parts.
+        // LaserRoom has no next RoomState, but its opposite wall still blocks the
+        // authored route to Part3, so keep a reference to it for BeginFinal().
         if (next == null && room.Walls.Length > 1)
         {
             room.ExitWall = room.Walls.FirstOrDefault(wall => wall != room.EntryWall);
